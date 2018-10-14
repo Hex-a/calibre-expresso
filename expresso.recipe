@@ -28,35 +28,39 @@ class ExpressoUrlProvider:
             "/semanario/semanario{0}/html/_index".format(nr))
 
 class Expresso(BasicNewsRecipe):
-    title          = 'Expresso'
+    title = "Expresso"
+    author = "hex-a"
+    description = "Calibre recipe for Expresso, a portuguese newspaper published on a weekly basis."
+    language = "pt"
+    pubication_type = "newspaper"
     oldest_article = 7
     max_articles_per_feed = 100
-    auto_cleanup   = True
     needs_subscription = True
-    url_provider = ExpressoUrlProvider()
 
-    #remove_tags_before = [{ 'attrs' : { "class": ["titulo"]}]
-    #remove_tags = [{ "attrs": { "class" : ["sidearticles"] }}]
-    #no_stylesheets = True
-    extra_stylesheets = "blockquote { font-style: italic; } figcaption { font-size: 60% }"
+    url_provider = ExpressoUrlProvider()
+    
+    auto_cleanup = False
+    remove_javascript = True
+    no_stylesheets = True
+    extra_css = """
+        blockquote, .intertitulo { font-style: italic; }
+        .pergunta, .antetitulo { font-weight: bold } 
+        .orelha { font-weight: bold; font-style: underline;}
+        .nome, .caption, .assinatura { font-size: 60%; font-weight: bold }
+    """
     preprocess_regexps = [
-        (re.compile(r'<aside.*</aside>', re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda match: ""),
+        (re.compile(r"<aside.*</aside>", re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda match: ""),
     ]
 
-    keep_only_tags = [{
-        "name": "p",
-        "attrs" : {
-            "class": [
-                "texto",
-                "subtitulo",
-                "entrada",
-                "titulo",
-            ]
-        }
-    },
-    #{ "name" : "article"},
-    { "name" : "figure"},
-    { "name" : "figcaption"}]
+    keep_only_tags = [
+        { "name" : "div", "attrs": { "class": ["mainarticles"]}},
+        { "name" : "article"}
+    ]
+
+    remove_tags = [
+        { "name": "div", "attrs": { "class": ["imp-reader-legacy", "footerButtons"]}},
+        { "name": "p", "attrs": { "class": ["partilhar"]}},
+    ]
 
     def get_browser(self):
         browser = BasicNewsRecipe.get_browser(self)
@@ -118,13 +122,6 @@ class Expresso(BasicNewsRecipe):
             "entrada": "blockquote"
         }
 
-        # for tag in soup.findAll(True, attrs = {"class": "js-article"}):
-        #     print("XXXX:", tag)
-
-        # aside = soup.find(name="aside")
-        # if aside:
-        #     aside.decompose()
-
         for tag in soup.findAll(True, attrs = {"class": class2tagname.keys()}):
             tag.name = class2tagname[tag["class"]]
 
@@ -155,6 +152,3 @@ class Expresso(BasicNewsRecipe):
             "Connection": "keep-alive",
             "TE": "Trailers"
         }
-
-
-        
