@@ -39,6 +39,10 @@ class Expresso(BasicNewsRecipe):
 
     url_provider = ExpressoUrlProvider()
     
+    useHighResImages = False
+    compress_news_images = True
+    compress_news_images_auto_size = 3
+
     auto_cleanup = False
     remove_javascript = True
     no_stylesheets = True
