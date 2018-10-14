@@ -1,0 +1,160 @@
+#!/usr/bin/env python2
+# vim:fileencoding=utf-8
+from __future__ import unicode_literals, division, absolute_import, print_function
+from calibre.web.feeds.news import BasicNewsRecipe
+from BeautifulSoup import Tag
+import json
+from mechanize import Request
+from urllib import quote
+import urlparse
+import re
+
+USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0'
+
+class ExpressoUrlProvider:
+    BASE_URL = "https://leitor.expresso.pt"
+
+    def sessionUrl(self):
+        return "https://id.impresa.pt/v2/api/session"
+
+    def index_leitor(self):
+        return ExpressoUrlProvider.BASE_URL
+    
+    def article(self, relativeUrl):
+        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
+
+    def weeklyIssue(self, nr):
+        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, 
+            "/semanario/semanario{0}/html/_index".format(nr))
+
+class Expresso(BasicNewsRecipe):
+    title          = 'Expresso'
+    oldest_article = 7
+    max_articles_per_feed = 100
+    auto_cleanup   = True
+    needs_subscription = True
+    url_provider = ExpressoUrlProvider()
+
+    #remove_tags_before = [{ 'attrs' : { "class": ["titulo"]}]
+    #remove_tags = [{ "attrs": { "class" : ["sidearticles"] }}]
+    #no_stylesheets = True
+    extra_stylesheets = "blockquote { font-style: italic; } figcaption { font-size: 60% }"
+    preprocess_regexps = [
+        (re.compile(r'<aside.*</aside>', re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda match: ""),
+    ]
+
+    keep_only_tags = [{
+        "name": "p",
+        "attrs" : {
+            "class": [
+                "texto",
+                "subtitulo",
+                "entrada",
+                "titulo",
+            ]
+        }
+    },
+    #{ "name" : "article"},
+    { "name" : "figure"},
+    { "name" : "figcaption"}]
+
+    def get_browser(self):
+        browser = BasicNewsRecipe.get_browser(self)
+
+        login_data = Expresso.get_login_payload(self.username, self.password)
+        login_req = Request(Expresso.url_provider.sessionUrl(), 
+            headers = Expresso.get_login_headers(), 
+            data = json.dumps(login_data))
+        raw_response = browser.open(login_req).read()
+        response = json.loads(str(raw_response))
+        sessionId = response["token"]
+
+        browser.set_cookie('sessionId', sessionId, ".expresso.pt")
+      
+        return browser
+
+    def parse_index(self):
+        index = self.browser.open(Expresso.url_provider.index_leitor()).read()
+        nr = re.search("/semanario(\d+)", index).group(1)
+
+        soup = self.index_to_soup(Expresso.url_provider.weeklyIssue(nr))
+
+        feeds = []
+        for section in soup.findAll("section"):
+            if section.has_key("class") and "content" in section["class"]:
+                try:
+                    feeds.append(self.parse_section(section))
+                except:
+                    pass
+
+        return feeds
+
+    def parse_section(self, soup):
+        articles = []
+        # start at 1 to skip cover
+        for entry in soup.findAll(True, attrs = {"class" : "article-inner"})[1:]:
+            atag = entry.find("a", href=True)
+            link = atag["href"]
+
+            title = ''.join(entry.find(attrs = {"class": "article-title"}).contents)
+            lead = ''.join(entry.find(attrs = {"class": "article-lead"}).contents)
+
+            parsed_entry = dict(
+                title = title,
+                url = Expresso.url_provider.article(link),
+                date = "",
+                description = lead,
+                content = ""
+            )
+            articles.append(parsed_entry)
+  
+        section_name = soup.find("h2").contents[0]
+        return (section_name, articles)
+
+    def preprocess_html(self, soup):
+        class2tagname = {
+            "titulo": "h1",
+            "subtitulo": "h2",
+            "entrada": "blockquote"
+        }
+
+        # for tag in soup.findAll(True, attrs = {"class": "js-article"}):
+        #     print("XXXX:", tag)
+
+        # aside = soup.find(name="aside")
+        # if aside:
+        #     aside.decompose()
+
+        for tag in soup.findAll(True, attrs = {"class": class2tagname.keys()}):
+            tag.name = class2tagname[tag["class"]]
+
+        return soup
+
+    @staticmethod
+    def get_login_payload(username, password):
+        return {
+            "domainCode": "expresso",
+            "remember": "true",
+            "redirectUri": "https://leitor.expresso.pt",
+            "sendNotifications": "false",
+            "userEmail": username,
+            "userPassword": password
+        }
+            
+    @staticmethod
+    def get_login_headers():
+        return {
+            "Host": "id.impresa.pt",
+            "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:62.0) Gecko/20100101 Firefox/62.0",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Referer": "https://leitor.expresso.pt/",
+            "content-type": "application/json",
+            "origin": "https://leitor.expresso.pt",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "TE": "Trailers"
+        }
+
+
+        
