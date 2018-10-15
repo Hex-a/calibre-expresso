@@ -41,7 +41,7 @@ class Expresso(BasicNewsRecipe):
     
     useHighResImages = False
     compress_news_images = True
-    compress_news_images_auto_size = 3
+    compress_news_images_auto_size = 16
 
     auto_cleanup = False
     remove_javascript = True
