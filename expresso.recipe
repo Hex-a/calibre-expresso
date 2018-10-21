@@ -9,7 +9,6 @@ from calibre.web.feeds.news import BasicNewsRecipe
 from mechanize import Request
 from urllib import quote
 
-
 class ExpressoUrlProvider:
     BASE_URL = "https://leitor.expresso.pt"
 
@@ -47,12 +46,35 @@ class Expresso(BasicNewsRecipe):
     no_stylesheets = True
     extra_css = """
         blockquote, .intertitulo { font-style: italic; }
-        .pergunta, .antetitulo { font-weight: bold } 
+        .pergunta, .antetitulo { font-weight: bold; } 
         .orelha { font-weight: bold; font-style: underline;}
-        .nome, .caption, .assinatura { font-size: 60%; font-weight: bold }
+        .nome, .caption, .assinatura { font-size: 60%; font-weight: bold; }
+        .destaque { 
+            box-sizing: border-box; display: block; font-size: 2.44444em; 
+            font-style: italic;
+            line-height: 1.2;
+            outline: 0;
+            position: relative;
+            vertical-align: baseline;
+            padding: 26px 0;
+            border-top: #bfbfbf solid 1px;
+            border-right: none;
+            border-bottom: #bfbfbf solid 1px;
+            border-left: none;
+            margin: 26px 0;    
+        }
+        .capitular {
+            font-size: 80px;
+            height: 60px;
+            top: -8px;
+        }
     """
+
+    substitute = lambda x, y:(re.compile(x, re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda _: y)
     preprocess_regexps = [
-        (re.compile(r"<aside.*</aside>", re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda match: ""),
+        substitute(r"<aside.*</aside>", ""),
+        substitute(r"destaque\d+", "destaque"),
+        substitute(r"capitular\d+", "capitular"),
     ]
 
     keep_only_tags = [
@@ -61,7 +83,9 @@ class Expresso(BasicNewsRecipe):
     ]
 
     remove_tags = [
-        { "name": "div", "attrs": { "class": ["imp-reader-legacy", "footerButtons"]}},
+        { "name": "div", "attrs": { 
+            "class": ["imp-reader-legacy", "footerButtons"]}
+        },
         { "name": "p", "attrs": { "class": ["partilhar"]}},
     ]
 
@@ -126,6 +150,12 @@ class Expresso(BasicNewsRecipe):
             "entrada": "blockquote"
         }
 
+        for sharectrl in soup.findAll(attrs={"data-share-trigger": True}):
+            sharectrl.extract()
+
+        for tag in soup.findAll(attrs={"class": ["authorContacts"]}):
+            tag.extract()
+          
         for tag in soup.findAll(True, attrs = {"class": class2tagname.keys()}):
             tag.name = class2tagname[tag["class"]]
 
