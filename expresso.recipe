@@ -111,6 +111,7 @@ class Expresso(BasicNewsRecipe):
         print("Fetching issue: ", Expresso.url_provider.weeklyIssue(nr))
         soup = self.index_to_soup(Expresso.url_provider.weeklyIssue(nr))
 
+        # Parse feeds
         feeds = []
         for section in soup.findAll("section"):
             if section.has_key("class") and "content" in section["class"]:
@@ -119,6 +120,12 @@ class Expresso(BasicNewsRecipe):
                 except:
                     pass
 
+        # Set cover url
+        cover = self.get_cover(self.browser)
+        print("Setting cover: ", cover)
+        if cover:
+            self.cover_url = cover
+        
         return feeds
 
     def parse_section(self, soup):
@@ -142,6 +149,14 @@ class Expresso(BasicNewsRecipe):
 
         section_name = soup.find("h2").contents[0]
         return (section_name, articles)
+
+    def get_cover(self, browser):
+        covers = self.browser.open("https://expresso.sapo.pt/Capas").read()
+        match = re.search(r'src="([^"]*?Primeira[^"]*?)"', covers)
+        if not match:
+            return
+        cover_url = match.group(1)
+        return "https://" + re.sub("(?<=original).*", r"", cover_url).replace(r"//", "")
 
     def preprocess_html(self, soup):
         class2tagname = {
