@@ -12,7 +12,7 @@ from urllib import quote
 class ExpressoUrlProvider:
     BASE_URL = "https://leitor.expresso.pt"
 
-    def sessionUrl(self):
+    def session(self):
         return "https://id.impresa.pt/v2/api/session"
 
     def index_leitor(self):
@@ -21,7 +21,13 @@ class ExpressoUrlProvider:
     def article(self, relativeUrl):
         return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
 
-    def weeklyIssue(self, nr):
+    def first_pages_index(self):
+        return "https://expresso.sapo.pt/Capas" 
+
+    def first_page(self, relative_url):
+        return urlparse.urljoin(self.first_pages_index(), relative_url)
+
+    def weekly_issue(self, nr):
         return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, 
             "/semanario/semanario{0}/html/_index".format(nr))
 
@@ -93,7 +99,7 @@ class Expresso(BasicNewsRecipe):
         browser = BasicNewsRecipe.get_browser(self)
 
         login_data = Expresso.get_login_payload(self.username, self.password)
-        login_req = Request(Expresso.url_provider.sessionUrl(), 
+        login_req = Request(self.url_provider.session(), 
             headers = Expresso.get_login_headers(), 
             data = json.dumps(login_data))
         raw_response = browser.open(login_req).read()
@@ -105,11 +111,10 @@ class Expresso(BasicNewsRecipe):
         return browser
 
     def parse_index(self):
-        index = self.browser.open(Expresso.url_provider.index_leitor()).read()
+        index = self.browser.open(self.url_provider.index_leitor()).read()
         nr = re.search('/semanario/semanario(.+?)"', index).group(1)
 
-        print("Fetching issue: ", Expresso.url_provider.weeklyIssue(nr))
-        soup = self.index_to_soup(Expresso.url_provider.weeklyIssue(nr))
+        soup = self.index_to_soup(self.url_provider.weekly_issue(nr))
 
         # Parse feeds
         feeds = []
@@ -120,12 +125,6 @@ class Expresso(BasicNewsRecipe):
                 except:
                     pass
 
-        # Set cover url
-        cover = self.get_cover(self.browser)
-        print("Setting cover: ", cover)
-        if cover:
-            self.cover_url = cover
-        
         return feeds
 
     def parse_section(self, soup):
@@ -140,7 +139,7 @@ class Expresso(BasicNewsRecipe):
 
             parsed_entry = dict(
                 title = title,
-                url = Expresso.url_provider.article(link),
+                url = self.url_provider.article(link),
                 date = "",
                 description = lead,
                 content = ""
@@ -150,13 +149,13 @@ class Expresso(BasicNewsRecipe):
         section_name = soup.find("h2").contents[0]
         return (section_name, articles)
 
-    def get_cover(self, browser):
-        covers = self.browser.open("https://expresso.sapo.pt/Capas").read()
+    def get_cover_url(self):
+        covers = self.browser.open(self.url_provider.first_pages_index()).read()
         match = re.search(r'src="([^"]*?Primeira[^"]*?)"', covers)
         if not match:
-            return
-        cover_url = match.group(1)
-        return "https://" + re.sub("(?<=original).*", r"", cover_url).replace(r"//", "")
+            return None
+        cover_url = re.sub(r"/[^/]*$", "", match.group(1))
+        return self.url_provider.first_page(cover_url)
 
     def preprocess_html(self, soup):
         class2tagname = {
