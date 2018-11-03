@@ -1,0 +1,237 @@
+#!/usr/bin/env python2
+
+from __future__ import (
+    unicode_literals, division, absolute_import, print_function)
+
+import json
+import urlparse
+import re
+from calibre.web.feeds.news import BasicNewsRecipe
+from mechanize import Request
+
+is_week_edition=True
+
+
+def either(for_week_ed, for_day_ed):
+    return for_week_ed if is_week_edition else for_day_ed
+
+
+class ExpressoUrlProvider:
+    BASE_URL = "https://leitor.expresso.pt"
+
+    def session(self):
+        return "https://id.impresa.pt/v2/api/session"
+
+    def index_leitor(self):
+        return either(
+            ExpressoUrlProvider.BASE_URL,
+            "https://leitor.expresso.pt/diario")
+
+    def article(self, relativeUrl):
+        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
+
+    def first_pages_index(self):
+        return either(
+            "https://expresso.sapo.pt/Capas",
+            "https://leitor.expresso.pt/diario")
+
+    def first_page(self, relative_url):
+        return urlparse.urljoin(self.first_pages_index(), relative_url)
+
+    def weekly_issue(self, nr):
+        relurl = either(
+            "/semanario/semanario{0}/html/_index".format(nr),
+            nr + "/html/_index")
+        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relurl)
+
+
+class Expresso(BasicNewsRecipe):
+    title = either("Expresso", "Expresso Daily")
+    author = "hex-a"
+    description = """
+        Calibre recipe for Expresso, a portuguese newspaper
+        published on a weekly basis."""
+    language = "pt"
+    pubication_type = "newspaper"
+    oldest_article = 7
+    max_articles_per_feed = 100
+    needs_subscription = True
+
+    url_provider = ExpressoUrlProvider()
+
+    remove_empty_feeds = True
+
+    useHighResImages = False
+    compress_news_images = True
+    compress_news_images_auto_size = 16
+
+    auto_cleanup = False
+    remove_javascript = True
+    no_stylesheets = True
+    extra_css = """
+        blockquote, .intertitulo { font-style: italic; }
+        .pergunta, .antetitulo { font-weight: bold; }
+        .orelha { font-weight: bold; font-style: underline;}
+        .nome, .caption, .assinatura { font-size: 60%; font-weight: bold; }
+        .destaque {
+            box-sizing: border-box; display: block; font-size: 2.44444em;
+            font-style: italic;
+            line-height: 1.2;
+            outline: 0;
+            position: relative;
+            vertical-align: baseline;
+            padding: 26px 0;
+            border-top: #bfbfbf solid 1px;
+            border-right: none;
+            border-bottom: #bfbfbf solid 1px;
+            border-left: none;
+            margin: 26px 0;
+        }
+        .capitular {
+            font-size: 80px;
+            height: 60px;
+            top: -8px;
+        }
+    """
+
+    def substitute(x, y):
+        return (
+            re.compile(x, re.DOTALL | re.IGNORECASE | re.MULTILINE),
+            lambda _: y)
+
+    preprocess_regexps = [
+        substitute(r"<aside.*</aside>", ""),
+        substitute(r"destaque\d+", "destaque"),
+        substitute(r"capitular\d+", "capitular"),
+    ]
+
+    keep_only_tags = [
+        {"name": "div", "attrs": {"class": ["mainarticles"]}},
+        {"name": "article"}
+    ]
+
+    remove_tags = [
+        {
+            "name": "div",
+            "attrs": {"class": ["imp-reader-legacy", "footerButtons"]}
+        },
+        {"name": "p", "attrs": {"class": ["partilhar"]}},
+    ]
+
+    def get_browser(self):
+        browser = BasicNewsRecipe.get_browser(self)
+
+        login_data = Expresso.get_login_payload(self.username, self.password)
+        login_req = Request(
+            self.url_provider.session(),
+            headers=Expresso.get_login_headers(),
+            data=json.dumps(login_data))
+        raw_response = browser.open(login_req).read()
+        response = json.loads(str(raw_response))
+        sessionId = response["token"]
+
+        browser.set_cookie('sessionId', sessionId, ".expresso.pt")
+
+        return browser
+
+    def parse_index(self):
+        index = self.browser.open(self.url_provider.index_leitor()).read()
+        issue_url = self.get_issue_url(index)
+        soup = self.index_to_soup(issue_url)
+
+        # Parse feeds
+        feeds = []
+        for section in soup.findAll("section"):
+            if section.has_key("class") and "content" in section["class"]:
+                try:
+                    feeds.append(self.parse_section(section))
+                except Exception as e:
+                    print(
+                        "Couldn't parse section because "
+                        "exception was raised: {0}".format(e))
+
+        return feeds
+
+    def get_issue_url(self, index):
+        # Find and get last week issue
+        pattern = either('/semanario/semanario(.+?)"', '(/diario/.+?)"')
+        nr = re.search(pattern, index).group(1)
+
+        return self.url_provider.weekly_issue(nr)
+
+    def parse_section(self, soup):
+        articles = []
+        # start at 1 to skip cover
+        for entry in soup.findAll(True, attrs={"class": "article-inner"})[1:]:
+            atag = entry.find("a", href=True)
+            link = atag["href"]
+
+            title = ''.join(
+                entry.find(attrs={"class": "article-title"}).contents)
+            lead = ''.join(
+                entry.find(attrs={"class": "article-lead"}).contents)
+
+            parsed_entry = dict(
+                title=title,
+                url=self.url_provider.article(link),
+                description=lead,
+            )
+            articles.append(parsed_entry)
+
+        h2 = soup.find("h2")
+        section_name = either("", "Diário")
+        if h2:
+            section_name = h2.contents[0]
+
+        return (section_name, articles)
+
+    def get_cover_url(self):
+        covers = self.index_to_soup(self.url_provider.first_pages_index())
+        for a in covers.findAll("a", href=True):
+            if either("pagina-do-Expresso", "/diario/") in a["href"]:
+                src = a.find("img")["src"]
+                cover_url = re.sub(r"/[^/]*$", "", src)
+                return self.url_provider.first_page(cover_url)
+
+    def preprocess_html(self, soup):
+        class2tagname = {
+            "titulo": "h1",
+            "subtitulo": "h2",
+            "entrada": "blockquote"
+        }
+
+        for sharectrl in soup.findAll(attrs={"data-share-trigger": True}):
+            sharectrl.extract()
+
+        for tag in soup.findAll(attrs={"class": ["authorContacts"]}):
+            tag.extract()
+
+        for tag in soup.findAll(True, attrs={"class": class2tagname.keys()}):
+            tag.name = class2tagname[tag["class"]]
+
+        return soup
+
+    @staticmethod
+    def get_login_payload(username, password):
+        return {
+            "domainCode": "expresso",
+            "remember": "true",
+            "redirectUri": "https://leitor.expresso.pt",
+            "sendNotifications": "false",
+            "userEmail": username,
+            "userPassword": password
+        }
+
+    @staticmethod
+    def get_login_headers():
+        return {
+            "Host": "id.impresa.pt",
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Referer": "https://leitor.expresso.pt/",
+            "content-type": "application/json",
+            "origin": "https://leitor.expresso.pt",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "TE": "Trailers"
+        }
