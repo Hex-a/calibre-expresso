@@ -76,6 +76,7 @@ class Expresso(BasicNewsRecipe):
             font-size: 80px;
             height: 60px;
             top: -8px;
+        }
     """
 
     substitute = lambda x, y:(re.compile(x, re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda _: y)
