@@ -1,5 +1,5 @@
 #!/usr/bin/env python2
-# vim:fileencoding=utf-8
+
 from __future__ import unicode_literals, division, absolute_import, print_function
 
 import json
@@ -7,7 +7,7 @@ import urlparse
 import re
 from calibre.web.feeds.news import BasicNewsRecipe
 from mechanize import Request
-from urllib import quote
+
 
 class ExpressoUrlProvider:
     BASE_URL = "https://leitor.expresso.pt"
@@ -31,6 +31,7 @@ class ExpressoUrlProvider:
         return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, 
             "/semanario/semanario{0}/html/_index".format(nr))
 
+
 class Expresso(BasicNewsRecipe):
     title = "Expresso"
     author = "hex-a"
@@ -42,6 +43,8 @@ class Expresso(BasicNewsRecipe):
     needs_subscription = True
 
     url_provider = ExpressoUrlProvider()
+
+    remove_empty_feeds = True
 
     useHighResImages = False
     compress_news_images = True
@@ -73,7 +76,6 @@ class Expresso(BasicNewsRecipe):
             font-size: 80px;
             height: 60px;
             top: -8px;
-        }
     """
 
     substitute = lambda x, y:(re.compile(x, re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda _: y)
@@ -112,9 +114,8 @@ class Expresso(BasicNewsRecipe):
 
     def parse_index(self):
         index = self.browser.open(self.url_provider.index_leitor()).read()
-        nr = re.search('/semanario/semanario(.+?)"', index).group(1)
-
-        soup = self.index_to_soup(self.url_provider.weekly_issue(nr))
+        issue_url = self.get_issue_url(index)
+        soup = self.index_to_soup(issue_url)
 
         # Parse feeds
         feeds = []
@@ -122,10 +123,16 @@ class Expresso(BasicNewsRecipe):
             if section.has_key("class") and "content" in section["class"]:
                 try:
                     feeds.append(self.parse_section(section))
-                except:
-                    pass
+                except Exception as e:
+                    print("Couldn't parse section because exception was raised: {}".format(e))
 
         return feeds
+
+    def get_issue_url(self, index):
+        # Find and get last week issue
+        nr = re.search('/semanario/semanario(.+?)"', index).group(1)
+
+        return self.url_provider.weekly_issue(nr)
 
     def parse_section(self, soup):
         articles = []
@@ -140,22 +147,24 @@ class Expresso(BasicNewsRecipe):
             parsed_entry = dict(
                 title = title,
                 url = self.url_provider.article(link),
-                date = "",
                 description = lead,
-                content = ""
             )
             articles.append(parsed_entry)
 
-        section_name = soup.find("h2").contents[0]
+        h2 = soup.find("h2")
+        section_name = ""
+        if h2:
+            section_name = h2.contents[0]
+
         return (section_name, articles)
 
     def get_cover_url(self):
-        covers = self.browser.open(self.url_provider.first_pages_index()).read()
-        match = re.search(r'src="([^"]*?Primeira[^"]*?)"', covers)
-        if not match:
-            return None
-        cover_url = re.sub(r"/[^/]*$", "", match.group(1))
-        return self.url_provider.first_page(cover_url)
+        covers = self.index_to_soup(self.url_provider.first_pages_index())
+        for a in covers.findAll("a", href=True):
+            if "pagina-do-Expresso" in a["href"]:
+                src = a.find("img")["src"]
+                cover_url = re.sub(r"/[^/]*$", "", src)
+                return self.url_provider.first_page(cover_url)
 
     def preprocess_html(self, soup):
         class2tagname = {
