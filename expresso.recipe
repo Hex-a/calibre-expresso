@@ -1,13 +1,13 @@
 #!/usr/bin/env python2
 
-from __future__ import unicode_literals, division, absolute_import, print_function
+from __future__ import (
+    unicode_literals, division, absolute_import, print_function)
 
 import json
 import urlparse
 import re
 from calibre.web.feeds.news import BasicNewsRecipe
 from mechanize import Request
-
 
 class ExpressoUrlProvider:
     BASE_URL = "https://leitor.expresso.pt"
@@ -22,20 +22,23 @@ class ExpressoUrlProvider:
         return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
 
     def first_pages_index(self):
-        return "https://expresso.sapo.pt/Capas" 
+        return "https://expresso.sapo.pt/Capas"
 
     def first_page(self, relative_url):
         return urlparse.urljoin(self.first_pages_index(), relative_url)
 
     def weekly_issue(self, nr):
-        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, 
+        return urlparse.urljoin(
+            ExpressoUrlProvider.BASE_URL,
             "/semanario/semanario{0}/html/_index".format(nr))
 
 
 class Expresso(BasicNewsRecipe):
     title = "Expresso"
     author = "hex-a"
-    description = "Calibre recipe for Expresso, a portuguese newspaper published on a weekly basis."
+    description = """
+        Calibre recipe for Expresso, a portuguese newspaper
+        published on a weekly basis."""
     language = "pt"
     pubication_type = "newspaper"
     oldest_article = 7
@@ -55,11 +58,11 @@ class Expresso(BasicNewsRecipe):
     no_stylesheets = True
     extra_css = """
         blockquote, .intertitulo { font-style: italic; }
-        .pergunta, .antetitulo { font-weight: bold; } 
+        .pergunta, .antetitulo { font-weight: bold; }
         .orelha { font-weight: bold; font-style: underline;}
         .nome, .caption, .assinatura { font-size: 60%; font-weight: bold; }
-        .destaque { 
-            box-sizing: border-box; display: block; font-size: 2.44444em; 
+        .destaque {
+            box-sizing: border-box; display: block; font-size: 2.44444em;
             font-style: italic;
             line-height: 1.2;
             outline: 0;
@@ -70,7 +73,7 @@ class Expresso(BasicNewsRecipe):
             border-right: none;
             border-bottom: #bfbfbf solid 1px;
             border-left: none;
-            margin: 26px 0;    
+            margin: 26px 0;
         }
         .capitular {
             font-size: 80px;
@@ -79,7 +82,11 @@ class Expresso(BasicNewsRecipe):
         }
     """
 
-    substitute = lambda x, y:(re.compile(x, re.DOTALL|re.IGNORECASE|re.MULTILINE), lambda _: y)
+    def substitute(x, y):
+        return (
+            re.compile(x, re.DOTALL | re.IGNORECASE | re.MULTILINE),
+            lambda _: y)
+
     preprocess_regexps = [
         substitute(r"<aside.*</aside>", ""),
         substitute(r"destaque\d+", "destaque"),
@@ -87,24 +94,26 @@ class Expresso(BasicNewsRecipe):
     ]
 
     keep_only_tags = [
-        { "name" : "div", "attrs": { "class": ["mainarticles"]}},
-        { "name" : "article"}
+        {"name": "div", "attrs": {"class": ["mainarticles"]}},
+        {"name": "article"}
     ]
 
     remove_tags = [
-        { "name": "div", "attrs": { 
-            "class": ["imp-reader-legacy", "footerButtons"]}
+        {
+            "name": "div",
+            "attrs": {"class": ["imp-reader-legacy", "footerButtons"]}
         },
-        { "name": "p", "attrs": { "class": ["partilhar"]}},
+        {"name": "p", "attrs": {"class": ["partilhar"]}},
     ]
 
     def get_browser(self):
         browser = BasicNewsRecipe.get_browser(self)
 
         login_data = Expresso.get_login_payload(self.username, self.password)
-        login_req = Request(self.url_provider.session(), 
-            headers = Expresso.get_login_headers(), 
-            data = json.dumps(login_data))
+        login_req = Request(
+            self.url_provider.session(),
+            headers=Expresso.get_login_headers(),
+            data=json.dumps(login_data))
         raw_response = browser.open(login_req).read()
         response = json.loads(str(raw_response))
         sessionId = response["token"]
@@ -125,7 +134,9 @@ class Expresso(BasicNewsRecipe):
                 try:
                     feeds.append(self.parse_section(section))
                 except Exception as e:
-                    print("Couldn't parse section because exception was raised: {}".format(e))
+                    print(
+                        "Couldn't parse section because "
+                        "exception was raised: {0}".format(e))
 
         return feeds
 
@@ -138,17 +149,19 @@ class Expresso(BasicNewsRecipe):
     def parse_section(self, soup):
         articles = []
         # start at 1 to skip cover
-        for entry in soup.findAll(True, attrs = {"class" : "article-inner"})[1:]:
+        for entry in soup.findAll(True, attrs={"class": "article-inner"})[1:]:
             atag = entry.find("a", href=True)
             link = atag["href"]
 
-            title = ''.join(entry.find(attrs = {"class": "article-title"}).contents)
-            lead = ''.join(entry.find(attrs = {"class": "article-lead"}).contents)
+            title = ''.join(
+                entry.find(attrs={"class": "article-title"}).contents)
+            lead = ''.join(
+                entry.find(attrs={"class": "article-lead"}).contents)
 
             parsed_entry = dict(
-                title = title,
-                url = self.url_provider.article(link),
-                description = lead,
+                title=title,
+                url=self.url_provider.article(link),
+                description=lead,
             )
             articles.append(parsed_entry)
 
@@ -179,8 +192,8 @@ class Expresso(BasicNewsRecipe):
 
         for tag in soup.findAll(attrs={"class": ["authorContacts"]}):
             tag.extract()
-          
-        for tag in soup.findAll(True, attrs = {"class": class2tagname.keys()}):
+
+        for tag in soup.findAll(True, attrs={"class": class2tagname.keys()}):
             tag.name = class2tagname[tag["class"]]
 
         return soup
@@ -200,7 +213,6 @@ class Expresso(BasicNewsRecipe):
     def get_login_headers():
         return {
             "Host": "id.impresa.pt",
-            "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:62.0) Gecko/20100101 Firefox/62.0",
             "Accept": "application/json",
             "Accept-Language": "en-US,en;q=0.5",
             "Referer": "https://leitor.expresso.pt/",
