@@ -9,7 +9,7 @@ import re
 from calibre.web.feeds.news import BasicNewsRecipe
 from mechanize import Request
 
-is_week_edition=True
+is_week_edition=False
 
 
 def either(for_week_ed, for_day_ed):
