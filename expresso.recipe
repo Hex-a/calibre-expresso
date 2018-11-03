@@ -9,6 +9,13 @@ import re
 from calibre.web.feeds.news import BasicNewsRecipe
 from mechanize import Request
 
+is_week_edition = True
+
+
+def either(for_week_ed, for_day_ed):
+    return for_week_ed if is_week_edition else for_day_ed
+
+
 class ExpressoUrlProvider:
     BASE_URL = "https://leitor.expresso.pt"
 
@@ -16,25 +23,30 @@ class ExpressoUrlProvider:
         return "https://id.impresa.pt/v2/api/session"
 
     def index_leitor(self):
-        return ExpressoUrlProvider.BASE_URL
+        return either(
+            ExpressoUrlProvider.BASE_URL,
+            "https://leitor.expresso.pt/diario")
 
     def article(self, relativeUrl):
         return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
 
     def first_pages_index(self):
-        return "https://expresso.sapo.pt/Capas"
+        return either(
+            "https://expresso.sapo.pt/Capas",
+            "https://leitor.expresso.pt/diario")
 
     def first_page(self, relative_url):
         return urlparse.urljoin(self.first_pages_index(), relative_url)
 
     def weekly_issue(self, nr):
-        return urlparse.urljoin(
-            ExpressoUrlProvider.BASE_URL,
-            "/semanario/semanario{0}/html/_index".format(nr))
+        relurl = either(
+            "/semanario/semanario{0}/html/_index".format(nr),
+            nr + "/html/_index")
+        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relurl)
 
 
 class Expresso(BasicNewsRecipe):
-    title = "Expresso"
+    title = either("Expresso", "Expresso Daily")
     author = "hex-a"
     description = """
         Calibre recipe for Expresso, a portuguese newspaper
@@ -142,7 +154,8 @@ class Expresso(BasicNewsRecipe):
 
     def get_issue_url(self, index):
         # Find and get last week issue
-        nr = re.search('/semanario/semanario(.+?)"', index).group(1)
+        pattern = either('/semanario/semanario(.+?)"', '(/diario/.+?)"')
+        nr = re.search(pattern, index).group(1)
 
         return self.url_provider.weekly_issue(nr)
 
@@ -166,7 +179,7 @@ class Expresso(BasicNewsRecipe):
             articles.append(parsed_entry)
 
         h2 = soup.find("h2")
-        section_name = ""
+        section_name = either("", "Diário")
         if h2:
             section_name = h2.contents[0]
 
@@ -175,7 +188,7 @@ class Expresso(BasicNewsRecipe):
     def get_cover_url(self):
         covers = self.index_to_soup(self.url_provider.first_pages_index())
         for a in covers.findAll("a", href=True):
-            if "pagina-do-Expresso" in a["href"]:
+            if either("pagina-do-Expresso", "/diario/") in a["href"]:
                 src = a.find("img")["src"]
                 cover_url = re.sub(r"/[^/]*$", "", src)
                 return self.url_provider.first_page(cover_url)
