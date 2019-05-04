@@ -32,7 +32,7 @@ class ExpressoUrlProvider:
 
     def first_pages_index(self):
         return either(
-            "https://expresso.sapo.pt/Capas",
+            "https://leitor.expresso.pt/semanario",
             "https://leitor.expresso.pt/diario")
 
     def first_page(self, relative_url):
@@ -188,7 +188,7 @@ class Expresso(BasicNewsRecipe):
     def get_cover_url(self):
         covers = self.index_to_soup(self.url_provider.first_pages_index())
         for a in covers.findAll("a", href=True):
-            if either("pagina-do-Expresso", "/diario/") in a["href"]:
+            if either("/semanario/", "/diario/") in a["href"]:
                 src = a.find("img")["src"]
                 cover_url = re.sub(r"/[^/]*$", "", src)
                 return self.url_provider.first_page(cover_url)
