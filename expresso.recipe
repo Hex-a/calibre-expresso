@@ -1,10 +1,12 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
+
+#Taken from https://github.com/Hex-a/calibre-expresso
 from __future__ import (
     unicode_literals, division, absolute_import, print_function)
 
 import json
-import urlparse
+from urllib.parse import urljoin
 import re
 from calibre.web.feeds.news import BasicNewsRecipe
 from mechanize import Request
@@ -20,7 +22,7 @@ class ExpressoUrlProvider:
     BASE_URL = "https://leitor.expresso.pt"
 
     def session(self):
-        return "https://id.impresa.pt/v2/api/session"
+        return "https://api.impresa.pt/sso/v2/api/session"
 
     def index_leitor(self):
         return either(
@@ -28,7 +30,7 @@ class ExpressoUrlProvider:
             "https://leitor.expresso.pt/diario")
 
     def article(self, relativeUrl):
-        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
+        return urljoin(ExpressoUrlProvider.BASE_URL, relativeUrl)
 
     def first_pages_index(self):
         return either(
@@ -36,13 +38,13 @@ class ExpressoUrlProvider:
             "https://leitor.expresso.pt/diario")
 
     def first_page(self, relative_url):
-        return urlparse.urljoin(self.first_pages_index(), relative_url)
+        return urljoin(self.first_pages_index(), relative_url)
 
     def weekly_issue(self, nr):
         relurl = either(
             "/semanario/semanario{0}/html/_index".format(nr),
             nr + "/html/_index")
-        return urlparse.urljoin(ExpressoUrlProvider.BASE_URL, relurl)
+        return urljoin(ExpressoUrlProvider.BASE_URL, relurl)
 
 
 class Expresso(BasicNewsRecipe):
@@ -120,29 +122,26 @@ class Expresso(BasicNewsRecipe):
 
     def get_browser(self):
         browser = BasicNewsRecipe.get_browser(self)
-
         login_data = Expresso.get_login_payload(self.username, self.password)
         login_req = Request(
             self.url_provider.session(),
             headers=Expresso.get_login_headers(),
             data=json.dumps(login_data))
-        raw_response = browser.open(login_req).read()
+        raw_response = browser.open(login_req).read().decode('utf-8')
         response = json.loads(str(raw_response))
         sessionId = response["token"]
-
         browser.set_cookie('sessionId', sessionId, ".expresso.pt")
-
         return browser
 
     def parse_index(self):
-        index = self.browser.open(self.url_provider.index_leitor()).read()
+        index = self.browser.open(self.url_provider.index_leitor()).read().decode('utf-8')
         issue_url = self.get_issue_url(index)
         soup = self.index_to_soup(issue_url)
 
         # Parse feeds
         feeds = []
         for section in soup.findAll("section"):
-            if section.has_key("class") and "content" in section["class"]:
+            if section.has_key("class") and "section-content" in section["class"]:
                 try:
                     feeds.append(self.parse_section(section))
                 except Exception as e:
@@ -156,13 +155,13 @@ class Expresso(BasicNewsRecipe):
         # Find and get last week issue
         pattern = either('/semanario/semanario(.+?)"', '(/diario/.+?)"')
         nr = re.search(pattern, index).group(1)
-
+    
         return self.url_provider.weekly_issue(nr)
 
     def parse_section(self, soup):
         articles = []
         # start at 1 to skip cover
-        for entry in soup.findAll(True, attrs={"class": "article-inner"})[1:]:
+        for entry in soup.findAll(True, attrs={"class": "article-container"})[1:]:
             atag = entry.find("a", href=True)
             link = atag["href"]
 
@@ -170,7 +169,6 @@ class Expresso(BasicNewsRecipe):
                 entry.find(attrs={"class": "article-title"}).contents)
             lead = ''.join(
                 entry.find(attrs={"class": "article-lead"}).contents)
-
             parsed_entry = dict(
                 title=title,
                 url=self.url_provider.article(link),
@@ -207,7 +205,7 @@ class Expresso(BasicNewsRecipe):
             tag.extract()
 
         for tag in soup.findAll(True, attrs={"class": class2tagname.keys()}):
-            tag.name = class2tagname[tag["class"]]
+            tag.name = class2tagname[tag["class"][0]] #This tag["class"] was a list and as returning "TypeError: unhashable type: 'list'"
 
         return soup
 
@@ -216,8 +214,7 @@ class Expresso(BasicNewsRecipe):
         return {
             "domainCode": "expresso",
             "remember": "true",
-            "redirectUri": "https://leitor.expresso.pt",
-            "sendNotifications": "false",
+            "sendNotifications": "true",
             "userEmail": username,
             "userPassword": password
         }
@@ -225,7 +222,7 @@ class Expresso(BasicNewsRecipe):
     @staticmethod
     def get_login_headers():
         return {
-            "Host": "id.impresa.pt",
+            "Host": "api.impresa.pt",
             "Accept": "application/json",
             "Accept-Language": "en-US,en;q=0.5",
             "Referer": "https://leitor.expresso.pt/",
